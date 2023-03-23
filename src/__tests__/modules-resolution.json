@@ -1,0 +1,4 @@
+{
+  "alliage-fake-module": "/path/to/alliage-fake-module/index.js",
+  "alliage-fake-module/package.json": "/path/to/alliage-fake-module/package.json"
+}
