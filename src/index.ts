@@ -3,6 +3,23 @@ import cp from 'child_process';
 
 import fs from 'fs-extra';
 
+const LOCAL_MODULE_PATTERN = /^\.{0,2}(\/.*)+$/;
+
+const ALLIAGE_MODULES_FILE_NAME = 'alliage-modules.json';
+const ALLIAGE_SCRIPT_NAME = 'alliage-scripts';
+
+const NODE_MODULES_PATH = 'node_modules';
+const LINKED_MODULES_PATH = 'linked_modules';
+const BINS_PATH = `${NODE_MODULES_PATH}/.bin`;
+
+const DEFAULT_SANDBOX_PATH = './.alliage-sandboxes';
+const DEFAULT_PROJECT_PATH = './';
+
+enum PLACEHOLDERS {
+  PROJECT_ROOT = 'projectRoot',
+  SCENARIO_ROOT = 'scenarioRoot',
+}
+
 interface Config {
   command: string;
   copyFiles: string[];
@@ -22,17 +39,11 @@ export interface Params {
 }
 
 export const CONFIG_FILE_NAME = 'alliage-sandbox-config.json';
-const LOCAL_MODULE_PATTERN = /^\.{0,2}(\/.*)+$/;
 
 export enum COMMAND {
   INSTALL = 'install',
   BUILD = 'build',
   RUN = 'run',
-}
-
-enum PLACEHOLDERS {
-  PROJECT_ROOT = 'projectRoot',
-  SCENARIO_ROOT = 'scenarioRoot',
 }
 
 export class Sandbox {
@@ -57,8 +68,8 @@ export class Sandbox {
 
   constructor({
     scenarioPath,
-    projectPath = '.',
-    sandboxPath = './.alliage-sandboxes',
+    projectPath = DEFAULT_PROJECT_PATH,
+    sandboxPath = DEFAULT_SANDBOX_PATH,
     sandboxConfig = CONFIG_FILE_NAME,
   }: Params) {
     this.scenarioPath = path.resolve(scenarioPath);
@@ -102,11 +113,14 @@ export class Sandbox {
         fs.copy(filePath, path.resolve(this.sandboxPath, path.basename(filePath))),
       ),
       ...Object.entries(this.config.linkModules).map(([moduleName, modulePath]) =>
-        fs.ensureSymlink(modulePath, path.resolve(this.sandboxPath, 'linked_modules', moduleName)),
+        fs.ensureSymlink(
+          modulePath,
+          path.resolve(this.sandboxPath, LINKED_MODULES_PATH, moduleName),
+        ),
       ),
       fs.ensureSymlink(
-        path.resolve(this.projectPath, 'node_modules'),
-        path.resolve(this.sandboxPath, 'node_modules'),
+        path.resolve(this.projectPath, NODE_MODULES_PATH),
+        path.resolve(this.sandboxPath, NODE_MODULES_PATH),
       ),
     ]);
     await this.generateModulesDefinition();
@@ -119,7 +133,9 @@ export class Sandbox {
       this.loadModulesDefinition(),
       await Promise.all(
         this.config.alliageModules.map(async (moduleName) => {
-          const resolver = LOCAL_MODULE_PATTERN.test(moduleName) ? path.resolve : require.resolve;
+          const resolver = LOCAL_MODULE_PATTERN.test(moduleName)
+            ? path.resolve
+            : (m: string) => require.resolve(m, { paths: this.computeNodePath() });
           const packageJsonPath = resolver(`${moduleName}/package.json`).toString();
 
           const packageInfo = await fs.readJson(packageJsonPath);
@@ -132,14 +148,14 @@ export class Sandbox {
         }),
       ),
     ]);
-    await fs.writeJson(path.resolve(this.sandboxPath, 'alliage-modules.json'), {
+    await fs.writeJson(path.resolve(this.sandboxPath, ALLIAGE_MODULES_FILE_NAME), {
       ...modulesDef,
       ...loadedModules,
     });
   }
 
   private async loadModulesDefinition() {
-    const defPath = path.resolve(this.sandboxPath, 'alliage-modules.json');
+    const defPath = path.resolve(this.sandboxPath, ALLIAGE_MODULES_FILE_NAME);
     if (await fs.pathExists(defPath)) {
       return fs.readJson(defPath);
     }
@@ -169,15 +185,12 @@ export class Sandbox {
 
   private runCommand(command: COMMAND, args: string[], { env = {} }: CommandOptions) {
     this.throwIfNotInitialized();
-    const nodePath = [
-      path.resolve(this.sandboxPath, 'linked_modules'),
-      ...(process.env.NODE_PATH?.split(':') || []),
-    ].join(':');
+    const nodePath = this.computeNodePath().join(':');
     const systemPath = [
       ...(process.env.PATH?.split(':') || []),
-      path.resolve(this.sandboxPath, 'node_modules/.bin'),
+      path.resolve(this.sandboxPath, BINS_PATH),
     ].join(':');
-    const script = path.resolve(this.sandboxPath, 'node_modules/.bin/alliage-scripts');
+    const script = path.resolve(this.sandboxPath, `${BINS_PATH}/${ALLIAGE_SCRIPT_NAME}`);
 
     const childProcess = cp.exec(`${this.config.command} ${script} ${command} ${args.join(' ')}`, {
       env: {
@@ -202,6 +215,14 @@ export class Sandbox {
       waitCompletion: () => completionPromise,
       process: childProcess,
     };
+  }
+
+  private computeNodePath() {
+    return [
+      path.resolve(this.sandboxPath, LINKED_MODULES_PATH),
+      path.resolve(this.sandboxPath, NODE_MODULES_PATH),
+      ...(process.env.NODE_PATH?.split(':') || []),
+    ];
   }
 
   private throwIfNotInitialized() {
