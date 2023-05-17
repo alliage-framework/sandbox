@@ -199,9 +199,9 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(
+              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
                 sandbox.getPath(),
-                'linked_modules',
+                'node_modules',
               )}:test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
@@ -245,9 +245,9 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(
+              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
                 sandbox.getPath(),
-                'linked_modules',
+                'node_modules',
               )}:test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
@@ -280,9 +280,9 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(
+              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
                 sandbox.getPath(),
-                'linked_modules',
+                'node_modules',
               )}:test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
@@ -348,9 +348,6 @@ describe('Sandbox', () => {
     });
 
     beforeAll(() => {
-      delete process.env.PATH;
-      delete process.env.NODE_PATH;
-
       readJsonMock
         // Load config file
         .mockResolvedValueOnce({
@@ -423,8 +420,11 @@ describe('Sandbox', () => {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
-            PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
-            NODE_PATH: path.resolve(sandbox.getPath(), 'linked_modules'),
+            PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
+            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
+              sandbox.getPath(),
+              'node_modules',
+            )}:test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
@@ -445,8 +445,11 @@ describe('Sandbox', () => {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
-            PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
-            NODE_PATH: path.resolve(sandbox.getPath(), 'linked_modules'),
+            PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
+            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
+              sandbox.getPath(),
+              'node_modules',
+            )}:test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
@@ -457,6 +460,12 @@ describe('Sandbox', () => {
 
     describe('#run', () => {
       it('should handle undefined PATH and NODE_PATH correctly', async () => {
+        const prevNodePath = process.env.NODE_PATH;
+        delete process.env.NODE_PATH;
+
+        const prevPath = process.env.PATH;
+        delete process.env.PATH;
+
         const execSpy = jest.spyOn(cp, 'exec').mockImplementation(() => ({} as any));
 
         sandbox.run(['test-arg1', 'test-arg2']);
@@ -465,12 +474,17 @@ describe('Sandbox', () => {
           env: {
             ...process.env,
             PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
-            NODE_PATH: path.resolve(sandbox.getPath(), 'linked_modules'),
+            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
+              sandbox.getPath(),
+              'node_modules',
+            )}`,
           },
           cwd: sandbox.getPath(),
         });
 
         execSpy.mockRestore();
+        process.env.NODE_PATH = prevNodePath;
+        process.env.PATH = prevPath;
       });
 
       it('should allow to define env variables', async () => {
@@ -484,8 +498,11 @@ describe('Sandbox', () => {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
-            PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
-            NODE_PATH: path.resolve(sandbox.getPath(), 'linked_modules'),
+            PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
+            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
+              sandbox.getPath(),
+              'node_modules',
+            )}:test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
