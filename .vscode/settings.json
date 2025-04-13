@@ -1,0 +1,15 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "[typescript]": {
+    "typescript.preferences.importModuleSpecifier": "relative"
+  },
+  "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+  "typescript.preferences.quoteStyle": "single",
+  "files.associations": {
+    "vitest.config.ts": "typescriptreact"
+  },
+  "typescript.suggest.autoImports": true,
+  "typescript.suggest.paths": true,
+  "typescript.preferences.importModuleSpecifierEnding": "js"
+} 

@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    /* Basic Options */
+    "target": "ESNext",
+    "module": "NodeNext",
+    "lib": ["es2018"],
+    "sourceMap": true,
+    "declaration": true,
+
+    /* Strict Type-Checking Options */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+
+    /* Additional Checks */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Module Resolution Options */
+    "moduleResolution": "nodenext",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+
+    /* Advanced Options */
+    "resolveJsonModule": true
+  }
+}
