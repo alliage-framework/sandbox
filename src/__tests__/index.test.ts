@@ -1,24 +1,39 @@
-import path from 'path';
-import cp from 'child_process';
+import * as path from 'path';
+import * as cp from 'child_process';
 import { EventEmitter } from 'events';
 import { promisify } from 'util';
 import fs from 'fs-extra';
-import 'jest-extended';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
-import { Sandbox } from '..';
+import { Sandbox } from '../index.js';
 
-jest.mock('fs-extra');
+vi.mock('fs-extra');
+vi.mock('child_process');
+
+const DUMMY_MODULES_RESOLUTION: Record<string, string> = {
+  'alliage-fake-module': '/path/to/alliage-fake-module/index.js',
+  'alliage-fake-module/package.json': '/path/to/alliage-fake-module/package.json',
+};
+const CUSTOM_MODULE_RESOLVER = (moduleName: string) => {
+  const modulePath = DUMMY_MODULES_RESOLUTION[moduleName];
+  if (!modulePath) {
+    throw new Error(`Module ${moduleName} not found`);
+  }
+  return modulePath;
+};
 
 const waitForNextTick = promisify(process.nextTick);
 
 describe('Sandbox', () => {
-  const removeMock = fs.remove as jest.Mock;
-  const mkdirpMock = fs.mkdirp as jest.Mock;
-  const readJsonMock = fs.readJson as jest.Mock;
-  const copyMock = fs.copy as jest.Mock;
-  const ensureSymlinkMock = fs.ensureSymlink as jest.Mock;
-  const pathExistsMock = fs.pathExists as jest.Mock;
-  const writeJSONMock = fs.writeJson as jest.Mock;
+  const removeMock = fs.remove as unknown as Mock<typeof fs.remove>;
+  const mkdirpMock = fs.mkdirp as unknown as Mock<typeof fs.mkdirp>;
+  const readJsonMock = fs.readJson as unknown as Mock<typeof fs.readJson>;
+  const copyMock = fs.copy as unknown as Mock<typeof fs.copy>;
+  const ensureSymlinkMock = fs.ensureSymlink as unknown as Mock<typeof fs.ensureSymlink>;
+  const pathExistsMock = fs.pathExists as unknown as Mock<typeof fs.pathExists>;
+  const writeJSONMock = fs.writeJson as unknown as Mock<typeof fs.writeJson>;
+  const execMock = cp.exec as unknown as Mock<typeof cp.exec>;
 
   delete process.env.NODE;
   process.env.PATH = 'test-path1:test-path2';
@@ -28,6 +43,7 @@ describe('Sandbox', () => {
     const sandbox = new Sandbox({
       scenarioPath: 'path/to/scenario',
       projectPath: 'path/to/project',
+      moduleResolver: CUSTOM_MODULE_RESOLVER,
     });
 
     beforeAll(() => {
@@ -65,11 +81,11 @@ describe('Sandbox', () => {
         });
 
       // The "alliage-modules.json" file exists
-      pathExistsMock.mockResolvedValue(true);
+      pathExistsMock.mockResolvedValueOnce(true);
     });
 
     afterAll(() => {
-      jest.resetAllMocks();
+      vi.resetAllMocks();
     });
 
     describe('#init', () => {
@@ -185,12 +201,12 @@ describe('Sandbox', () => {
     describe('#install', () => {
       it('should call the installation script and return the process', async () => {
         const fakeProcess = new EventEmitter() as cp.ChildProcess;
-        const execSpy = jest.spyOn(cp, 'exec').mockReturnValue(fakeProcess);
+        execMock.mockReturnValue(fakeProcess);
 
         const res = sandbox.install(['test-arg1', 'test-arg2']);
 
-        expect(execSpy).toHaveBeenCalledTimes(1);
-        expect(execSpy).toHaveBeenCalledWith(
+        expect(execMock).toHaveBeenCalledTimes(1);
+        expect(execMock).toHaveBeenCalledWith(
           `node ${path.resolve(
             sandbox.getPath(),
             'node_modules/.bin/alliage-scripts',
@@ -218,25 +234,24 @@ describe('Sandbox', () => {
           isCompleted = true;
         });
         await waitForNextTick();
-        expect(isCompleted).toBeFalse();
+        expect(isCompleted).toBe(false);
 
         res.process.emit('exit');
         await waitForNextTick();
-        expect(isCompleted).toBeTrue();
-
-        execSpy.mockRestore();
+        expect(isCompleted).toBe(true);
       });
     });
 
     describe('#run', () => {
       it('should call the run script and return the process', async () => {
         const fakeProcess = new EventEmitter() as cp.ChildProcess;
-        const execSpy = jest.spyOn(cp, 'exec').mockReturnValue(fakeProcess);
+        execMock.mockClear();
+        execMock.mockReturnValue(fakeProcess);
 
         const res = sandbox.run(['test-arg1', 'test-arg2']);
 
-        expect(execSpy).toHaveBeenCalledTimes(1);
-        expect(execSpy).toHaveBeenCalledWith(
+        expect(execMock).toHaveBeenCalledTimes(1);
+        expect(execMock).toHaveBeenCalledWith(
           `node ${path.resolve(
             sandbox.getPath(),
             'node_modules/.bin/alliage-scripts',
@@ -258,20 +273,19 @@ describe('Sandbox', () => {
           process: fakeProcess,
           waitCompletion: expect.any(Function),
         });
-
-        execSpy.mockRestore();
       });
     });
 
     describe('#build', () => {
       it('should call the build script and return the process', async () => {
         const fakeProcess = new EventEmitter() as cp.ChildProcess;
-        const execSpy = jest.spyOn(cp, 'exec').mockReturnValue(fakeProcess);
+        execMock.mockClear();
+        execMock.mockReturnValue(fakeProcess);
 
         const res = sandbox.build(['test-arg1', 'test-arg2']);
 
-        expect(execSpy).toHaveBeenCalledTimes(1);
-        expect(execSpy).toHaveBeenCalledWith(
+        expect(execMock).toHaveBeenCalledTimes(1);
+        expect(execMock).toHaveBeenCalledWith(
           `node ${path.resolve(
             sandbox.getPath(),
             'node_modules/.bin/alliage-scripts',
@@ -293,8 +307,6 @@ describe('Sandbox', () => {
           process: fakeProcess,
           waitCompletion: expect.any(Function),
         });
-
-        execSpy.mockRestore();
       });
     });
   });
@@ -303,12 +315,12 @@ describe('Sandbox', () => {
     const sandbox = new Sandbox({
       scenarioPath: 'path/to/scenario',
       projectPath: 'path/to/project',
+      moduleResolver: CUSTOM_MODULE_RESOLVER,
     });
 
     describe('#getConfig', () => {
       it('should throw an error if the sandbox is not initialized', () => {
-        expect(() => sandbox.getConfig()).toThrowWithMessage(
-          Error,
+        expect(() => sandbox.getConfig()).toThrow(
           'The sandbox must be initialized by calling the "init()" method',
         );
       });
@@ -316,8 +328,7 @@ describe('Sandbox', () => {
 
     describe('#install', () => {
       it('should throw an error if the sandbox is not initialized', () => {
-        expect(() => sandbox.install([])).toThrowWithMessage(
-          Error,
+        expect(() => sandbox.install([])).toThrow(
           'The sandbox must be initialized by calling the "init()" method',
         );
       });
@@ -325,8 +336,7 @@ describe('Sandbox', () => {
 
     describe('#run', () => {
       it('should throw an error if the sandbox is not initialized', () => {
-        expect(() => sandbox.run([])).toThrowWithMessage(
-          Error,
+        expect(() => sandbox.run([])).toThrow(
           'The sandbox must be initialized by calling the "init()" method',
         );
       });
@@ -334,8 +344,7 @@ describe('Sandbox', () => {
 
     describe('#build', () => {
       it('should throw an error if the sandbox is not initialized', () => {
-        expect(() => sandbox.build([])).toThrowWithMessage(
-          Error,
+        expect(() => sandbox.build([])).toThrow(
           'The sandbox must be initialized by calling the "init()" method',
         );
       });
@@ -345,6 +354,7 @@ describe('Sandbox', () => {
   describe('Edge cases', () => {
     const sandbox = new Sandbox({
       scenarioPath: 'path/to/scenario',
+      moduleResolver: CUSTOM_MODULE_RESOLVER,
     });
 
     beforeAll(() => {
@@ -372,7 +382,7 @@ describe('Sandbox', () => {
     });
 
     afterAll(() => {
-      jest.resetAllMocks();
+      vi.resetAllMocks();
     });
 
     describe('#init', () => {
@@ -410,13 +420,13 @@ describe('Sandbox', () => {
 
     describe('#install', () => {
       it('should allow to define env variables', async () => {
-        const execSpy = jest.spyOn(cp, 'exec').mockImplementation(() => ({} as any));
+        execMock.mockImplementation(() => ({}) as cp.ChildProcess);
 
         sandbox.install(['test-arg1', 'test-arg2'], {
           env: { DUMMY_ENV_VARIABLE: 'dummy_env_variable' },
         });
 
-        expect(execSpy).toHaveBeenCalledWith(expect.anything(), {
+        expect(execMock).toHaveBeenCalledWith(expect.anything(), {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
@@ -428,20 +438,18 @@ describe('Sandbox', () => {
           },
           cwd: sandbox.getPath(),
         });
-
-        execSpy.mockRestore();
       });
     });
 
     describe('#build', () => {
       it('should allow to define env variables', async () => {
-        const execSpy = jest.spyOn(cp, 'exec').mockImplementation(() => ({} as any));
+        execMock.mockImplementation(() => ({}) as cp.ChildProcess);
 
         sandbox.build(['test-arg1', 'test-arg2'], {
           env: { DUMMY_ENV_VARIABLE: 'dummy_env_variable' },
         });
 
-        expect(execSpy).toHaveBeenCalledWith(expect.anything(), {
+        expect(execMock).toHaveBeenCalledWith(expect.anything(), {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
@@ -453,8 +461,6 @@ describe('Sandbox', () => {
           },
           cwd: sandbox.getPath(),
         });
-
-        execSpy.mockRestore();
       });
     });
 
@@ -466,11 +472,11 @@ describe('Sandbox', () => {
         const prevPath = process.env.PATH;
         delete process.env.PATH;
 
-        const execSpy = jest.spyOn(cp, 'exec').mockImplementation(() => ({} as any));
+        execMock.mockImplementation(() => ({}) as cp.ChildProcess);
 
         sandbox.run(['test-arg1', 'test-arg2']);
 
-        expect(execSpy).toHaveBeenCalledWith(expect.anything(), {
+        expect(execMock).toHaveBeenCalledWith(expect.anything(), {
           env: {
             ...process.env,
             PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
@@ -482,19 +488,18 @@ describe('Sandbox', () => {
           cwd: sandbox.getPath(),
         });
 
-        execSpy.mockRestore();
         process.env.NODE_PATH = prevNodePath;
         process.env.PATH = prevPath;
       });
 
       it('should allow to define env variables', async () => {
-        const execSpy = jest.spyOn(cp, 'exec').mockImplementation(() => ({} as any));
+        execMock.mockImplementation(() => ({}) as cp.ChildProcess);
 
         sandbox.run(['test-arg1', 'test-arg2'], {
           env: { DUMMY_ENV_VARIABLE: 'dummy_env_variable' },
         });
 
-        expect(execSpy).toHaveBeenCalledWith(expect.anything(), {
+        expect(execMock).toHaveBeenCalledWith(expect.anything(), {
           env: {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
@@ -506,8 +511,6 @@ describe('Sandbox', () => {
           },
           cwd: sandbox.getPath(),
         });
-
-        execSpy.mockRestore();
       });
     });
   });

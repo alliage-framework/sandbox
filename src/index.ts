@@ -1,5 +1,6 @@
-import path from 'path';
-import cp from 'child_process';
+import * as path from 'path';
+import * as cp from 'child_process';
+import { createRequire } from 'node:module';
 
 import fs from 'fs-extra';
 
@@ -36,7 +37,10 @@ export interface Params {
   projectPath?: string;
   sandboxPath?: string;
   sandboxConfig?: string;
+  moduleResolver?: (moduleName: string, options: NodeJS.RequireResolveOptions) => string;
 }
+
+const require = createRequire(import.meta.url);
 
 export const CONFIG_FILE_NAME = 'alliage-sandbox-config.json';
 
@@ -48,16 +52,12 @@ export enum COMMAND {
 
 export class Sandbox {
   private scenarioPath: string;
-
   private sandboxPath: string;
-
   private projectPath: string;
-
-  private configFileName: string;
-
-  private isInitialized: boolean;
-
   private config: Config;
+  private moduleResolver: (moduleName: string, options: NodeJS.RequireResolveOptions) => string;
+  private configFileName: string;
+  private isInitialized: boolean;
 
   private sandboxDirectory: string;
 
@@ -71,12 +71,14 @@ export class Sandbox {
     projectPath = DEFAULT_PROJECT_PATH,
     sandboxPath = DEFAULT_SANDBOX_PATH,
     sandboxConfig = CONFIG_FILE_NAME,
+    moduleResolver = require.resolve,
   }: Params) {
     this.scenarioPath = path.resolve(scenarioPath);
     this.projectPath = path.resolve(projectPath);
     this.sandboxDirectory = Math.random().toString(36).slice(2);
     this.sandboxPath = path.resolve(sandboxPath, this.sandboxDirectory);
     this.configFileName = sandboxConfig;
+    this.moduleResolver = moduleResolver;
     this.config = {
       command: process.env.NODE || 'node',
       copyFiles: [],
@@ -128,15 +130,15 @@ export class Sandbox {
   }
 
   private async generateModulesDefinition() {
-    const loadedModules: any = {};
+    const loadedModules: Record<string, unknown> = {};
     const [modulesDef] = await Promise.all([
       this.loadModulesDefinition(),
       await Promise.all(
         this.config.alliageModules.map(async (moduleName) => {
           const resolver = LOCAL_MODULE_PATTERN.test(moduleName)
             ? path.resolve
-            : (m: string) => require.resolve(m, { paths: this.computeNodePath() });
-          const packageJsonPath = resolver(`${moduleName}/package.json`).toString();
+            : (m: string) => this.moduleResolver(m, { paths: this.computeNodePath() });
+          const packageJsonPath = resolver(`${moduleName}/package.json`);
 
           const packageInfo = await fs.readJson(packageJsonPath);
           if (packageInfo.alliageManifest && packageInfo.alliageManifest.type === 'module') {
