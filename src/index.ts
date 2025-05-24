@@ -10,7 +10,6 @@ const ALLIAGE_MODULES_FILE_NAME = 'alliage-modules.json';
 const ALLIAGE_SCRIPT_NAME = 'alliage-scripts';
 
 const NODE_MODULES_PATH = 'node_modules';
-const LINKED_MODULES_PATH = 'linked_modules';
 const BINS_PATH = `${NODE_MODULES_PATH}/.bin`;
 
 const DEFAULT_SANDBOX_PATH = './.alliage-sandboxes';
@@ -58,6 +57,7 @@ export class Sandbox {
   private moduleResolver: (moduleName: string, options: NodeJS.RequireResolveOptions) => string;
   private configFileName: string;
   private isInitialized: boolean;
+  private linkedModulesSymlinks: string[];
 
   private sandboxDirectory: string;
 
@@ -86,6 +86,7 @@ export class Sandbox {
       alliageModules: [],
     };
     this.isInitialized = false;
+    this.linkedModulesSymlinks = [];
   }
 
   getPath() {
@@ -110,21 +111,30 @@ export class Sandbox {
     await fs.mkdirp(this.sandboxPath);
 
     await this.loadConfig();
+    // We link the node_modules directory of the project to the sandbox
+    await fs
+      .ensureSymlink(
+        path.resolve(this.projectPath, NODE_MODULES_PATH),
+        path.resolve(this.sandboxPath, NODE_MODULES_PATH),
+      )
+      .catch(() => {});
     await Promise.all([
+      // We copy the files configured in the config file
       ...this.config.copyFiles.map((filePath) =>
         fs.copy(filePath, path.resolve(this.sandboxPath, path.basename(filePath))),
       ),
-      ...Object.entries(this.config.linkModules).map(([moduleName, modulePath]) =>
-        fs.ensureSymlink(
-          modulePath,
-          path.resolve(this.sandboxPath, LINKED_MODULES_PATH, moduleName),
-        ),
-      ),
-      fs.ensureSymlink(
-        path.resolve(this.projectPath, NODE_MODULES_PATH),
-        path.resolve(this.sandboxPath, NODE_MODULES_PATH),
-      ),
+      // We link the modules configured in the config file
+      ...Object.entries(this.config.linkModules).map(async ([moduleName, modulePath]) => {
+        const symlinkPath = path.resolve(this.sandboxPath, NODE_MODULES_PATH, moduleName);
+        if (await fs.pathExists(symlinkPath)) {
+          return;
+        }
+        await fs.ensureSymlink(modulePath, symlinkPath);
+        // We store the symlink path to be able to unlink it when the sandbox is cleared
+        this.linkedModulesSymlinks.push(symlinkPath);
+      }),
     ]);
+    // We generate the alliage modules definition file
     await this.generateModulesDefinition();
     this.isInitialized = true;
   }
@@ -165,6 +175,8 @@ export class Sandbox {
   }
 
   async clear() {
+    // We unlink the linked modules
+    await Promise.all(this.linkedModulesSymlinks.map((symlinkPath) => fs.remove(symlinkPath)));
     await this.removeSandboxDirectory();
     this.isInitialized = false;
   }
@@ -187,7 +199,6 @@ export class Sandbox {
 
   private runCommand(command: COMMAND, args: string[], { env = {} }: CommandOptions) {
     this.throwIfNotInitialized();
-    const nodePath = this.computeNodePath().join(':');
     const systemPath = [
       ...(process.env.PATH?.split(':') || []),
       path.resolve(this.sandboxPath, BINS_PATH),
@@ -198,7 +209,6 @@ export class Sandbox {
       env: {
         ...process.env,
         ...env,
-        NODE_PATH: nodePath,
         PATH: systemPath,
       },
       cwd: this.sandboxPath,
@@ -221,8 +231,8 @@ export class Sandbox {
 
   private computeNodePath() {
     return [
-      path.resolve(this.sandboxPath, LINKED_MODULES_PATH),
       path.resolve(this.sandboxPath, NODE_MODULES_PATH),
+      /* v8 ignore next */
       ...(process.env.NODE_PATH?.split(':') || []),
     ];
   }

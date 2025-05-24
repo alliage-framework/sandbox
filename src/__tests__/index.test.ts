@@ -31,7 +31,7 @@ describe('Sandbox', () => {
   const readJsonMock = fs.readJson as unknown as Mock<typeof fs.readJson>;
   const copyMock = fs.copy as unknown as Mock<typeof fs.copy>;
   const ensureSymlinkMock = fs.ensureSymlink as unknown as Mock<typeof fs.ensureSymlink>;
-  const pathExistsMock = fs.pathExists as unknown as Mock<typeof fs.pathExists>;
+  const pathExistsMock = fs.pathExists as unknown as Mock<(path: string) => Promise<boolean>>;
   const writeJSONMock = fs.writeJson as unknown as Mock<typeof fs.writeJson>;
   const execMock = cp.exec as unknown as Mock<typeof cp.exec>;
 
@@ -80,8 +80,7 @@ describe('Sandbox', () => {
           },
         });
 
-      // The "alliage-modules.json" file exists
-      pathExistsMock.mockResolvedValueOnce(true);
+      ensureSymlinkMock.mockResolvedValue(void 0);
     });
 
     afterAll(() => {
@@ -89,9 +88,26 @@ describe('Sandbox', () => {
     });
 
     describe('#init', () => {
-      it('should clear the sandbox directory if it already exists', async () => {
+      beforeAll(async () => {
+        pathExistsMock.mockImplementation(async (filePath: string) => {
+          // The "alliage-fake-module" symlink does not exist
+          if (filePath === path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-module')) {
+            return false;
+          }
+          // The "alliage-modules.json" file exists
+          if (filePath === path.resolve(sandbox.getPath(), 'alliage-modules.json')) {
+            return true;
+          }
+          // The "node_modules" directory exists
+          if (filePath === path.resolve(sandbox.getPath(), 'node_modules')) {
+            return true;
+          }
+          return false;
+        });
         await sandbox.init();
+      });
 
+      it('should clear the sandbox directory if it already exists', async () => {
         expect(removeMock).toHaveBeenNthCalledWith(1, sandbox.getPath());
       });
 
@@ -128,16 +144,16 @@ describe('Sandbox', () => {
       it('should link the modules listed in the config file and the project node_modules', () => {
         expect(ensureSymlinkMock).toHaveBeenNthCalledWith(
           1,
-          path.resolve('path/to/project/packages/alliage-fake-module/dist'),
-          path.resolve(
-            sandbox.getPath(),
-            path.resolve(sandbox.getPath(), 'linked_modules', 'alliage-fake-module'),
-          ),
+          path.resolve('path/to/project/node_modules'),
+          path.resolve(sandbox.getPath(), 'node_modules'),
         );
         expect(ensureSymlinkMock).toHaveBeenNthCalledWith(
           2,
-          path.resolve('path/to/project/node_modules'),
-          path.resolve(sandbox.getPath(), 'node_modules'),
+          path.resolve('path/to/project/packages/alliage-fake-module/dist'),
+          path.resolve(
+            sandbox.getPath(),
+            path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-module'),
+          ),
         );
       });
 
@@ -215,10 +231,7 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-                sandbox.getPath(),
-                'node_modules',
-              )}:test-node-path1:test-node-path2`,
+              NODE_PATH: `test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
           },
@@ -260,10 +273,7 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-                sandbox.getPath(),
-                'node_modules',
-              )}:test-node-path1:test-node-path2`,
+              NODE_PATH: `test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
           },
@@ -294,10 +304,7 @@ describe('Sandbox', () => {
             env: {
               ...process.env,
               PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-              NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-                sandbox.getPath(),
-                'node_modules',
-              )}:test-node-path1:test-node-path2`,
+              NODE_PATH: `test-node-path1:test-node-path2`,
             },
             cwd: sandbox.getPath(),
           },
@@ -357,7 +364,7 @@ describe('Sandbox', () => {
       moduleResolver: CUSTOM_MODULE_RESOLVER,
     });
 
-    beforeAll(() => {
+    beforeAll(async () => {
       readJsonMock
         // Load config file
         .mockResolvedValueOnce({
@@ -365,6 +372,7 @@ describe('Sandbox', () => {
           copyFiles: ['<scenarioRoot>/src', '<projectRoot>/config'],
           linkModules: {
             'alliage-fake-module': '<projectRoot>/packages/alliage-fake-module/dist',
+            'alliage-fake-already-linked-module': '<projectRoot>/packages/alliage-fake-already-linked-module/dist',
           },
           alliageModules: ['alliage-fake-module'],
         })
@@ -377,8 +385,28 @@ describe('Sandbox', () => {
           },
         });
 
-      // The "alliage-modules.json" does not file exist
-      pathExistsMock.mockResolvedValue(false);
+      pathExistsMock.mockImplementation(async (filePath: string) => {
+        // The "alliage-modules.json" does not exist
+        if (filePath === path.resolve(sandbox.getPath(), 'alliage-modules.json')) {
+          return false;
+        }
+
+        // The "alliage-fake-module" symlink does not exist
+        if (filePath === path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-module')) {
+          return false;
+        }
+
+        // The "alliage-fake-already-linked-module" symlink exists
+        if (filePath === path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-already-linked-module')) {
+          return true;
+        }
+
+        return false;
+      });
+
+      ensureSymlinkMock.mockResolvedValue(void 0);
+
+      await sandbox.init();
     });
 
     afterAll(() => {
@@ -387,8 +415,6 @@ describe('Sandbox', () => {
 
     describe('#init', () => {
       it("should start from an empty modules definition if there's no existing alliage-modules.json file", async () => {
-        await sandbox.init();
-
         expect(writeJSONMock).toHaveBeenNthCalledWith(
           1,
           path.resolve(sandbox.getPath(), 'alliage-modules.json'),
@@ -399,6 +425,21 @@ describe('Sandbox', () => {
             },
           },
         );
+      });
+
+      it('should not link the modules listed in the config file if they already exist', () => {
+        // The "node_modules" directory is linked but the "alliage-fake-module" symlink is not
+        expect(ensureSymlinkMock).toHaveBeenNthCalledWith(
+          1,
+          path.resolve('node_modules'),
+          path.resolve(sandbox.getPath(), 'node_modules'),
+        );
+        expect(ensureSymlinkMock).toHaveBeenNthCalledWith(
+          2,
+          path.resolve('packages/alliage-fake-module/dist'),
+          path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-module'),
+        );
+        expect(ensureSymlinkMock).toHaveBeenCalledTimes(2);
       });
     });
 
@@ -431,10 +472,7 @@ describe('Sandbox', () => {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
             PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-              sandbox.getPath(),
-              'node_modules',
-            )}:test-node-path1:test-node-path2`,
+            NODE_PATH: `test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
@@ -454,10 +492,7 @@ describe('Sandbox', () => {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
             PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-              sandbox.getPath(),
-              'node_modules',
-            )}:test-node-path1:test-node-path2`,
+            NODE_PATH: `test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
@@ -480,10 +515,6 @@ describe('Sandbox', () => {
           env: {
             ...process.env,
             PATH: path.resolve(sandbox.getPath(), 'node_modules/.bin'),
-            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-              sandbox.getPath(),
-              'node_modules',
-            )}`,
           },
           cwd: sandbox.getPath(),
         });
@@ -504,13 +535,18 @@ describe('Sandbox', () => {
             ...process.env,
             DUMMY_ENV_VARIABLE: 'dummy_env_variable',
             PATH: `test-path1:test-path2:${path.resolve(sandbox.getPath(), 'node_modules/.bin')}`,
-            NODE_PATH: `${path.resolve(sandbox.getPath(), 'linked_modules')}:${path.resolve(
-              sandbox.getPath(),
-              'node_modules',
-            )}:test-node-path1:test-node-path2`,
+            NODE_PATH: `test-node-path1:test-node-path2`,
           },
           cwd: sandbox.getPath(),
         });
+      });
+    });
+
+    describe('#clear', () => {
+      it('should unlink the modules listed in the config file', async () => {
+        await sandbox.clear();
+        expect(removeMock).toHaveBeenCalledWith(path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-module'));
+        expect(removeMock).not.toHaveBeenCalledWith(path.resolve(sandbox.getPath(), 'node_modules', 'alliage-fake-already-linked-module'));
       });
     });
   });
